@@ -9,6 +9,12 @@ use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
+    // public function tournaments()
+    // {
+    //     return $this->belongsToMany(Tournament::class, 'tournament_players')
+    //                 ->withPivot('status')
+    //                 ->withTimestamps();
+    // }
     public function playerProfile()
     {
         return $this->hasOne(PlayerProfile::class);

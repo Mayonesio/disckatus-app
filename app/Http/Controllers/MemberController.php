@@ -4,89 +4,39 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\PlayerProfile;
-use App\Models\Role;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class MemberController extends Controller
 {
-    /**
-     * Mostrar listado de miembros con filtros y búsqueda
-     */
-    public function index(Request $request)
+    public function index()
     {
-        $query = User::with(['playerProfile', 'roles']);
-
-        // Búsqueda por nombre o email
-        if ($search = $request->input('search')) {
-            $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
-            });
-        }
-
-        // Filtro por rol
-        if ($role = $request->input('role')) {
-            $query->whereHas('roles', function($q) use ($role) {
-                $q->where('slug', $role);
-            });
-        }
-
-        // Filtro por posición
-        if ($position = $request->input('position')) {
-            $query->whereHas('playerProfile', function($q) use ($position) {
-                $q->where('position', $position);
-            });
-        }
-
-        // Ordenar por
-        $orderBy = $request->input('order_by', 'name');
-        $order = $request->input('order', 'asc');
-        $query->orderBy($orderBy, $order);
-
-        $members = $query->paginate(10);
-        $roles = Role::all();
-
-        return view('members.index', compact('members', 'roles'));
+        $members = User::with(['playerProfile', 'roles'])->get();
+        return view('members.index', compact('members'));
     }
 
-    /**
-     * Mostrar perfil de miembro
-     */
     public function show(User $user)
     {
         $user->load(['playerProfile', 'roles']);
         
-        // Obtener estadísticas básicas
-        $stats = [
-            'trainings_attended' => 0, // Implementar cuando tengamos el módulo de entrenamientos
-            'tournaments_played' => 0, // Implementar cuando tengamos el módulo de torneos
-            'payment_status' => 'Al día', // Implementar cuando tengamos el módulo de pagos
+        // Datos de ejemplo para el gráfico de rendimiento
+        $performanceData = [
+            'labels' => ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'],
+            'speed' => [5, 6, 7, 7, 8, 8],
+            'endurance' => [4, 5, 5, 6, 7, 7]
         ];
 
-        return view('members.show', compact('user', 'stats'));
+        return view('members.show', compact('user', 'performanceData'));
     }
 
-    /**
-     * Mostrar formulario de edición
-     */
     public function edit(User $user)
     {
-        $this->authorize('edit', $user); // Implementar política de autorización
         $user->load(['playerProfile', 'roles']);
-        $availableRoles = Role::all();
-        $availableNumbers = $this->getAvailableJerseyNumbers($user);
-
-        return view('members.edit', compact('user', 'availableRoles', 'availableNumbers'));
+        return view('members.edit', compact('user'));
     }
 
-    /**
-     * Actualizar perfil de miembro
-     */
     public function update(Request $request, User $user)
     {
-        $this->authorize('edit', $user); // Implementar política de autorización
-
         $validated = $request->validate([
             'position' => 'nullable|string|in:handler,cutter,both',
             'jersey_number' => [
@@ -100,41 +50,82 @@ class MemberController extends Controller
                     }
                 },
             ],
-            'height' => 'nullable|integer|min:100|max:250',
-            'gender' => 'nullable|string|in:male,female,other',
             'experience_years' => 'nullable|integer|min:0',
             'speed_rating' => 'nullable|integer|min:1|max:10',
             'endurance_rating' => 'nullable|integer|min:1|max:10',
             'emergency_contact' => 'nullable|string|max:255',
             'emergency_phone' => 'nullable|string|max:20',
-            'roles' => 'array|exists:roles,id'
+            'special_throws' => 'nullable|array',
+            'special_throws.*' => 'string|in:hammer,scoober,push_pass,thumber,low_release,high_release,espantaguiris,blade,no_look,over_the_head,upside_down',
+            'throws_notes' => 'nullable|string',
+            'hammer_rating' => 'nullable|integer|min:1|max:10',
+            'scoober_rating' => 'nullable|integer|min:1|max:10',
+            'push_pass_rating' => 'nullable|integer|min:1|max:10',
+            'thumber_rating' => 'nullable|integer|min:1|max:10',
+            'low_release_rating' => 'nullable|integer|min:1|max:10',
+            'high_release_rating' => 'nullable|integer|min:1|max:10',
+            'espantaguiris_rating' => 'nullable|integer|min:1|max:10',
+            'blade_rating' => 'nullable|integer|min:1|max:10',
+            'no_look_rating' => 'nullable|integer|min:1|max:10',
+            'over_the_head_rating' => 'nullable|integer|min:1|max:10',
+            'upside_down_rating' => 'nullable|integer|min:1|max:10',
         ]);
 
         try {
             DB::transaction(function () use ($user, $validated, $request) {
-                // Actualizar perfil
-                $user->playerProfile()->updateOrCreate(
+                // Datos básicos del perfil
+                $profileData = collect($validated)->except([
+                    'special_throws', 
+                    'throws_notes',
+                    'hammer_rating',
+                    'scoober_rating',
+                    'push_pass_rating',
+                    'thumber_rating',
+                    'low_release_rating',
+                    'high_release_rating',
+                    'espantaguiris_rating',
+                    'blade_rating',
+                    'no_look_rating',
+                    'over_the_head_rating',
+                    'upside_down_rating'
+                ])->toArray();
+
+                // Actualizar perfil básico
+                $profile = $user->playerProfile()->updateOrCreate(
                     ['user_id' => $user->id],
-                    collect($validated)->except('roles')->toArray()
+                    $profileData
                 );
 
-                // Actualizar roles si el usuario tiene permiso
-                if (auth()->user()->hasRole('captain') && $request->has('roles')) {
-                    $user->roles()->sync($request->input('roles'));
+                // Actualizar lanzamientos especiales
+                $specialThrows = $request->input('special_throws', []);
+                $profile->special_throws = $specialThrows;
+                
+                // Actualizar ratings de lanzamientos
+                foreach ($specialThrows as $throw) {
+                    $ratingKey = "{$throw}_rating";
+                    if ($request->has($ratingKey)) {
+                        $profile->{$ratingKey} = $request->input($ratingKey);
+                    }
                 }
+
+                // Guardar notas de lanzamientos
+                if ($request->has('throws_notes')) {
+                    $profile->throws_notes = $request->input('throws_notes');
+                }
+
+                $profile->save();
             });
 
             return redirect()->route('members.show', $user)
                 ->with('success', 'Perfil actualizado correctamente');
 
         } catch (\Exception $e) {
-            return back()->with('error', 'Error al actualizar el perfil. Por favor, inténtalo de nuevo.');
+            return back()
+                ->with('error', 'Error al actualizar el perfil. Por favor, inténtalo de nuevo.')
+                ->withInput();
         }
     }
 
-    /**
-     * Verificar si un número de dorsal está disponible
-     */
     private function isJerseyNumberTaken($number, $excludeUser = null)
     {
         $query = PlayerProfile::where('jersey_number', $number);
@@ -144,20 +135,5 @@ class MemberController extends Controller
         }
 
         return $query->exists();
-    }
-
-    /**
-     * Obtener números de dorsal disponibles
-     */
-    private function getAvailableJerseyNumbers($excludeUser = null)
-    {
-        $takenNumbers = PlayerProfile::where('jersey_number', '!=', null)
-            ->when($excludeUser, function ($query) use ($excludeUser) {
-                return $query->where('user_id', '!=', $excludeUser->id);
-            })
-            ->pluck('jersey_number')
-            ->toArray();
-
-        return array_diff(range(0, 99), $takenNumbers);
     }
 }
