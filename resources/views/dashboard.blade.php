@@ -1,7 +1,6 @@
 @extends('layouts.app')
 
 @section('title', 'Dashboard')
-
 @section('header', 'Bienvenido, ' . Auth::user()->name)
 
 @section('content')
