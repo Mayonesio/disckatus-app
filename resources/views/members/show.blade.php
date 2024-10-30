@@ -155,37 +155,57 @@
     </div>
 
     <!-- Logros y Medallas -->
-    <div class="mt-6 bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-semibold mb-4 text-[#10163f]">Logros y Medallas</h2>
+<div class="mt-6 bg-white rounded-lg shadow-md p-6">
+    <h2 class="text-xl font-semibold mb-4 text-[#10163f]">Logros y Medallas</h2>
+    
+    @if($user->playerProfile && count($user->playerProfile->getActiveThrows()) > 0)
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            @foreach(json_decode($user->playerProfile?->special_throws ?? '[]', true) as $throw)
+            @foreach($user->playerProfile->getActiveThrows() as $throw)
                 <div class="flex flex-col items-center space-y-2 p-4 bg-gray-50 rounded-lg">
-                    <div class="relative group">
-                        @php
-                            $rating = $user->playerProfile->{$throw.'_rating'} ?? 0;
-                            $color = $rating >= 8 ? '#FFD700' : ($rating >= 5 ? '#C0C0C0' : '#CD7F32');
-                        @endphp
-                        <svg class="w-12 h-12" viewBox="0 0 24 24" fill="{{ $color }}" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v5.7c0 4.83-3.36 9.36-7 10.46-3.64-1.1-7-5.63-7-10.46v-5.7l7-3.12z"/>
-                            <path fill="#10163f" d="M12 7a5 5 0 100 10 5 5 0 000-10z"/>
+                    <div class="relative">
+                        <svg class="w-12 h-12" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path class="{{ $throw['level']->color() }}" 
+                                  d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v5.7c0 4.83-3.36 9.36-7 10.46-3.64-1.1-7-5.63-7-10.46v-5.7l7-3.12z"/>
                         </svg>
                         <span class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white text-xs font-bold">
-                            {{ substr(ucfirst($throw), 0, 1) }}
+                            {{ $throw['level']->icon() }}
                         </span>
                     </div>
+                    
                     <span class="text-sm font-medium text-gray-900 text-center">
-                        {{ ucfirst(str_replace('_', ' ', $throw)) }}
+                        {{ $throw['type']->label() }}
                     </span>
-                    <span class="text-xs px-2 py-1 rounded-full
-                        {{ $rating >= 8 ? 'bg-yellow-100 text-yellow-800' : 
-                           ($rating >= 5 ? 'bg-gray-100 text-gray-800' : 
-                            'bg-orange-100 text-orange-800') }}">
-                        {{ $rating >= 8 ? 'Maestro' : ($rating >= 5 ? 'Avanzado' : 'Aprendiz') }}
+                    
+                    <span class="text-xs px-2 py-1 rounded-full {{ $throw['level']->color() }}">
+                        {{ $throw['level']->label() }}
                     </span>
                 </div>
             @endforeach
         </div>
-    </div>
+
+        @if($user->playerProfile->throws_notes)
+            <div class="mt-6 p-4 bg-gray-50 rounded-lg">
+                <h3 class="text-sm font-medium text-gray-900 mb-2">Observaciones</h3>
+                <p class="text-sm text-gray-600">{{ $user->playerProfile->throws_notes }}</p>
+            </div>
+        @endif
+    @else
+        <p class="text-gray-500 text-center py-8">Este jugador aún no ha registrado sus lanzamientos especiales</p>
+    @endif
+
+    @if($user->id === Auth::id() || Auth::user()->isCaptain())
+        <div class="mt-4 text-center">
+            <a href="{{ route('members.edit', $user) }}" 
+               class="inline-flex items-center px-4 py-2 bg-[#10163f] text-white rounded hover:bg-[#ffd200] hover:text-[#10163f]">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                Editar Lanzamientos
+            </a>
+        </div>
+    @endif
+</div>
 
     <!-- Gráfico de Rendimiento -->
     @if(isset($performanceData))

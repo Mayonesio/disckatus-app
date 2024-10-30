@@ -2,8 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\ThrowLevel;
+use App\Enums\ThrowType;
 use Illuminate\Database\Eloquent\Model;
-use App\Helpers\PhoneHelper; // Añadir esta línea
 
 class PlayerProfile extends Model
 {
@@ -19,25 +20,13 @@ class PlayerProfile extends Model
         'emergency_contact',
         'emergency_phone',
         'is_active',
-        'special_throws',
-        'throw_ratings',
-        'throws_notes',
-        'hammer_rating',
-        'scoober_rating',
-        'push_pass_rating',
-        'thumber_rating',
-        'low_release_rating',
-        'high_release_rating',
-        'espantaguiris_rating',
-        'blade_rating',
-        'no_look_rating',
-        'over_the_head_rating',
-        'upside_down_rating'
+        'throw_levels',
+        'throws_notes'
     ];
-    
+
     protected $casts = [
-        'special_throws' => 'array',
-        'throw_ratings' => 'array'
+        'throw_levels' => 'array',
+        'is_active' => 'boolean',
     ];
 
     public function user()
@@ -47,6 +36,43 @@ class PlayerProfile extends Model
 
     public function setEmergencyPhoneAttribute($value)
     {
-        $this->attributes['emergency_phone'] = PhoneHelper::format($value);
+        $this->attributes['emergency_phone'] = $value ? 
+            preg_replace('/[^0-9+]/', '', $value) : null;
+    }
+
+    public function getThrowLevel(ThrowType $throwType): ?ThrowLevel
+    {
+        $level = $this->throw_levels[$throwType->value] ?? null;
+        return $level ? ThrowLevel::from($level) : ThrowLevel::NONE;
+    }
+
+    public function getMasteredThrows(): array
+    {
+        $mastered = [];
+        foreach (ThrowType::cases() as $throwType) {
+            $level = $this->getThrowLevel($throwType);
+            if ($level === ThrowLevel::MASTER) {
+                $mastered[] = [
+                    'type' => $throwType,
+                    'level' => $level,
+                ];
+            }
+        }
+        return $mastered;
+    }
+
+    public function getActiveThrows(): array
+    {
+        $active = [];
+        foreach (ThrowType::cases() as $throwType) {
+            $level = $this->getThrowLevel($throwType);
+            if ($level !== ThrowLevel::NONE) {
+                $active[] = [
+                    'type' => $throwType,
+                    'level' => $level,
+                ];
+            }
+        }
+        return $active;
     }
 }

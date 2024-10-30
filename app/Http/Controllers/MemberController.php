@@ -2,10 +2,16 @@
 
 namespace App\Http\Controllers;
 
+
 use App\Models\User;
+use App\Models\Role;
 use App\Models\PlayerProfile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use App\Services\FirebaseStorageService;
 
 class MemberController extends Controller
 {
@@ -28,6 +34,77 @@ class MemberController extends Controller
 
         return view('members.show', compact('user', 'performanceData'));
     }
+
+    public function create()
+{
+    return view('members.create');
+}
+
+public function store(Request $request)
+{
+    $validated = $request->validate([
+        'name' => 'required|string|max:255',
+        'email' => 'required|email|unique:users,email',
+        'position' => 'nullable|string|in:handler,cutter,both',
+        'jersey_number' => [
+            'nullable',
+            'integer',
+            'min:0',
+            'max:99',
+            function ($attribute, $value, $fail) {
+                if ($this->isJerseyNumberTaken($value)) {
+                    $fail('Este número de dorsal ya está en uso.');
+                }
+            },
+        ],
+        'experience_years' => 'nullable|integer|min:0',
+        'speed_rating' => 'nullable|integer|min:1|max:10',
+        'endurance_rating' => 'nullable|integer|min:1|max:10',
+        'emergency_contact' => 'nullable|string|max:255',
+        'emergency_phone' => 'nullable|string|max:20',
+        'throw_levels' => 'nullable|array',
+        'throw_levels.*' => 'string|in:none,basic,intermediate,master',
+        'throws_notes' => 'nullable|string',
+    ]);
+
+    try {
+        DB::transaction(function () use ($validated) {
+            // Crear usuario
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => bcrypt(Str::random(16))
+            ]);
+
+            // Asignar rol de jugador
+            $playerRole = Role::where('slug', 'player')->first();
+            $user->roles()->attach($playerRole->id);
+
+            // Crear perfil
+            $profileData = collect($validated)
+                ->except(['name', 'email', 'throw_levels', 'throws_notes'])
+                ->toArray();
+
+            $profile = $user->playerProfile()->create($profileData);
+
+            // Guardar lanzamientos
+            if (isset($validated['throw_levels'])) {
+                $profile->throw_levels = $validated['throw_levels'];
+                $profile->throws_notes = $validated['throws_notes'] ?? null;
+                $profile->save();
+            }
+        });
+
+        return redirect()
+            ->route('members.index')
+            ->with('success', 'Miembro creado correctamente');
+
+    } catch (\Exception $e) {
+        return back()
+            ->with('error', 'Error al crear el miembro: ' . $e->getMessage())
+            ->withInput();
+    }
+}
 
     public function edit(User $user)
     {
@@ -55,74 +132,70 @@ class MemberController extends Controller
             'endurance_rating' => 'nullable|integer|min:1|max:10',
             'emergency_contact' => 'nullable|string|max:255',
             'emergency_phone' => 'nullable|string|max:20',
-            'special_throws' => 'nullable|array',
-            'special_throws.*' => 'string|in:hammer,scoober,push_pass,thumber,low_release,high_release,espantaguiris,blade,no_look,over_the_head,upside_down',
+            'throw_levels' => 'nullable|array',
+            'throw_levels.*' => 'string|in:none,basic,intermediate,master',
             'throws_notes' => 'nullable|string',
-            'hammer_rating' => 'nullable|integer|min:1|max:10',
-            'scoober_rating' => 'nullable|integer|min:1|max:10',
-            'push_pass_rating' => 'nullable|integer|min:1|max:10',
-            'thumber_rating' => 'nullable|integer|min:1|max:10',
-            'low_release_rating' => 'nullable|integer|min:1|max:10',
-            'high_release_rating' => 'nullable|integer|min:1|max:10',
-            'espantaguiris_rating' => 'nullable|integer|min:1|max:10',
-            'blade_rating' => 'nullable|integer|min:1|max:10',
-            'no_look_rating' => 'nullable|integer|min:1|max:10',
-            'over_the_head_rating' => 'nullable|integer|min:1|max:10',
-            'upside_down_rating' => 'nullable|integer|min:1|max:10',
         ]);
-
+    
         try {
-            DB::transaction(function () use ($user, $validated, $request) {
-                // Datos básicos del perfil
-                $profileData = collect($validated)->except([
-                    'special_throws', 
-                    'throws_notes',
-                    'hammer_rating',
-                    'scoober_rating',
-                    'push_pass_rating',
-                    'thumber_rating',
-                    'low_release_rating',
-                    'high_release_rating',
-                    'espantaguiris_rating',
-                    'blade_rating',
-                    'no_look_rating',
-                    'over_the_head_rating',
-                    'upside_down_rating'
-                ])->toArray();
-
+            DB::transaction(function () use ($user, $validated) {
                 // Actualizar perfil básico
+                $profileData = collect($validated)
+                    ->except(['throw_levels', 'throws_notes'])
+                    ->toArray();
+    
                 $profile = $user->playerProfile()->updateOrCreate(
                     ['user_id' => $user->id],
                     $profileData
                 );
-
-                // Actualizar lanzamientos especiales
-                $specialThrows = $request->input('special_throws', []);
-                $profile->special_throws = $specialThrows;
-                
-                // Actualizar ratings de lanzamientos
-                foreach ($specialThrows as $throw) {
-                    $ratingKey = "{$throw}_rating";
-                    if ($request->has($ratingKey)) {
-                        $profile->{$ratingKey} = $request->input($ratingKey);
-                    }
-                }
-
-                // Guardar notas de lanzamientos
-                if ($request->has('throws_notes')) {
-                    $profile->throws_notes = $request->input('throws_notes');
-                }
-
+    
+                // Actualizar niveles de lanzamientos
+                $profile->throw_levels = $validated['throw_levels'] ?? [];
+                $profile->throws_notes = $validated['throws_notes'];
                 $profile->save();
             });
-
-            return redirect()->route('members.show', $user)
+    
+            return redirect()
+                ->route('members.show', $user)
                 ->with('success', 'Perfil actualizado correctamente');
-
+    
         } catch (\Exception $e) {
             return back()
-                ->with('error', 'Error al actualizar el perfil. Por favor, inténtalo de nuevo.')
+                ->with('error', 'Error al actualizar el perfil: ' . $e->getMessage())
                 ->withInput();
+        }
+    }
+
+    public function updateAvatar(Request $request, User $user)
+    {
+        try {
+            $request->validate([
+                'avatar' => 'required|image|max:5120', // 5MB máximo
+            ]);
+    
+            if ($request->hasFile('avatar')) {
+                $firebaseStorage = app(FirebaseStorageService::class);
+    
+                // Eliminar avatar anterior si existe y no es de Google
+                if ($user->avatar && !filter_var($user->avatar, FILTER_VALIDATE_URL)) {
+                    $firebaseStorage->deleteAvatar($user->avatar);
+                }
+    
+                // Subir nuevo avatar a Firebase
+                $avatarUrl = $firebaseStorage->uploadAvatar($request->file('avatar'), $user->id);
+                
+                // Actualizar URL en la base de datos
+                $user->avatar = $avatarUrl;
+                $user->save();
+    
+                return redirect()->back()->with('success', 'Avatar actualizado correctamente');
+            }
+    
+            return redirect()->back()->with('error', 'No se ha seleccionado ninguna imagen');
+    
+        } catch (\Exception $e) {
+            Log::error('Error actualizando avatar: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Error al actualizar el avatar: ' . $e->getMessage());
         }
     }
 
